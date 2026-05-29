@@ -45,7 +45,7 @@ METAR Reader turns that into a friendly summary:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/metar-reader.git
+git clone https://github.com/d4vidholly/metar-reader.git
 cd metar-reader
 
 # 2. (Recommended) Create and activate a virtual environment
