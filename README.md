@@ -75,13 +75,35 @@ Then open your browser at **http://127.0.0.1:5000**.
 
 ---
 
+## Testing
+
+The project has a pytest test suite with 62 tests covering the decoder and Flask routes.
+
+```bash
+python -m pytest tests/ -v
+```
+
+Tests are split into two files:
+
+| File | Tests | What's covered |
+|---|---|---|
+| `tests/test_decoder.py` | 45 | Temperature (incl. negative M-prefix), wind, visibility, cloud cover, weather phenomena, pressure, metadata |
+| `tests/test_routes.py` | 17 | Input validation, successful decode, API error handling |
+
+Route tests patch `fetch_raw_metar` so no real network requests are made — the suite runs fully offline.
+
+---
+
 ## Project structure
 
 ```
 metar-reader/
 ├── app.py              # Flask app — routes and API fetch logic
 ├── metar_decoder.py    # Pure-Python METAR parser and plain-English generator
-├── requirements.txt    # Python dependencies
+├── requirements.txt    # Python dependencies (flask, requests, pytest)
+├── tests/
+│   ├── test_decoder.py # Unit tests for the METAR parser
+│   └── test_routes.py  # Integration tests for Flask routes
 └── templates/
     └── index.html      # Single-page UI (HTML, CSS, and JavaScript)
 ```
