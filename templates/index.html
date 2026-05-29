@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>METAR Reader — Airport Weather Decoder</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      background: linear-gradient(160deg, #c9e8fd 0%, #7ec8f5 35%, #3a9dd4 70%, #0d5fa0 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2.5rem 1rem 5rem;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    .page-header {
+      text-align: center;
+      color: white;
+      margin-bottom: 2.5rem;
+    }
+    .page-header h1 {
+      font-size: 2.6rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      text-shadow: 0 2px 12px rgba(0,0,0,.25);
+    }
+    .page-header p {
+      margin-top: 6px;
+      font-size: 1.05rem;
+      opacity: .88;
+    }
+
+    /* ── Search ─────────────────────────────────────────────── */
+    .search-wrap { width: 100%; max-width: 560px; margin-bottom: 2rem; }
+
+    .search-box {
+      display: flex;
+      background: white;
+      border-radius: 50px;
+      padding: 6px 6px 6px 22px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.1);
+      transition: box-shadow .2s;
+    }
+    .search-box:focus-within {
+      box-shadow: 0 8px 32px rgba(0,0,0,.22), 0 0 0 3px rgba(255,255,255,.55);
+    }
+
+    #icao-input {
+      flex: 1;
+      border: none;
+      outline: none;
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #0d5fa0;
+      background: transparent;
+    }
+    #icao-input::placeholder {
+      font-weight: 400;
+      letter-spacing: 0;
+      text-transform: none;
+      color: #a0b8c8;
+    }
+
+    #search-btn {
+      background: #0d5fa0;
+      color: white;
+      border: none;
+      border-radius: 40px;
+      padding: 13px 28px;
+      font-size: .98rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .18s, transform .1s;
+      white-space: nowrap;
+    }
+    #search-btn:hover  { background: #094a80; }
+    #search-btn:active { transform: scale(.97); }
+    #search-btn:disabled { background: #a0b8c8; cursor: not-allowed; }
+
+    /* Quick picks */
+    .quick-picks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 14px;
+    }
+    .qp {
+      background: rgba(255,255,255,.22);
+      border: 1px solid rgba(255,255,255,.5);
+      color: white;
+      border-radius: 22px;
+      padding: 5px 15px;
+      font-size: .84rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .18s;
+    }
+    .qp:hover { background: rgba(255,255,255,.38); }
+
+    /* ── Error ───────────────────────────────────────────────── */
+    #error-msg {
+      background: #fff0f0;
+      color: #b71c1c;
+      border: 1px solid #ffcdd2;
+      border-radius: 14px;
+      padding: 14px 20px;
+      max-width: 560px;
+      width: 100%;
+      margin-bottom: 1.2rem;
+      font-weight: 600;
+      display: none;
+    }
+
+    /* ── Loading ─────────────────────────────────────────────── */
+    #loading {
+      display: none;
+      text-align: center;
+      color: white;
+      margin: 2.5rem 0;
+    }
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255,255,255,.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin .75s linear infinite;
+      margin: 0 auto 14px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Result card ─────────────────────────────────────────── */
+    #result { display: none; width: 100%; max-width: 680px; }
+
+    .card {
+      background: rgba(255,255,255,.97);
+      border-radius: 26px;
+      padding: 2rem;
+      box-shadow: 0 20px 56px rgba(0,0,0,.18);
+    }
+
+    /* Card header row */
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 1.4rem;
+      border-bottom: 1px solid #deeef9;
+      margin-bottom: 1.4rem;
+    }
+    .station-id {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 3px;
+      color: #0d5fa0;
+    }
+    .station-meta {
+      font-size: .82rem;
+      color: #7a9ab0;
+      margin-top: 4px;
+    }
+    .auto-tag {
+      display: inline-block;
+      margin-top: 6px;
+      background: #fff3e0;
+      color: #e65100;
+      border-radius: 8px;
+      padding: 3px 10px;
+      font-size: .78rem;
+      font-weight: 700;
+    }
+
+    /* Condition hero (right side) */
+    .cond-hero { text-align: right; }
+    .cond-emoji { font-size: 3.6rem; line-height: 1; display: block; }
+    .cond-name  { font-size: .95rem; color: #5a7a90; font-weight: 600; margin-top: 4px; }
+
+    /* Temperature big display */
+    .temp-block {
+      text-align: center;
+      padding: 1rem 0 1.5rem;
+      border-bottom: 1px solid #deeef9;
+      margin-bottom: 1.5rem;
+    }
+    .temp-f {
+      font-size: 4.2rem;
+      font-weight: 200;
+      color: #0d5fa0;
+      line-height: 1;
+    }
+    .temp-c { font-size: 1.1rem; color: #7a9ab0; margin-top: 4px; }
+
+    /* Details grid */
+    .details-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+    .di {
+      background: #f0f7ff;
+      border-radius: 16px;
+      padding: 15px 16px;
+    }
+    .di.wide { grid-column: 1 / -1; }
+    .di-icon  { font-size: 1.35rem; margin-bottom: 5px; }
+    .di-label {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: #7a9ab0;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .di-value { font-size: .97rem; color: #0d3d6e; font-weight: 600; line-height: 1.35; }
+
+    /* Raw METAR toggle */
+    .raw-section {
+      margin-top: 1.6rem;
+      padding-top: 1.4rem;
+      border-top: 1px solid #deeef9;
+    }
+    .raw-toggle {
+      background: none;
+      border: none;
+      color: #0d5fa0;
+      font-size: .9rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0;
+    }
+    .raw-toggle:hover { color: #094a80; }
+    .raw-body { display: none; margin-top: 12px; }
+    .raw-body.open { display: block; }
+    .raw-text {
+      background: #1a2a3a;
+      color: #7ecfbf;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: .9rem;
+      padding: 16px 18px;
+      border-radius: 14px;
+      word-break: break-all;
+      line-height: 1.7;
+    }
+
+    /* Decode-error banner */
+    .decode-warn {
+      background: #fff8e1;
+      color: #795548;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: .88rem;
+      margin-top: 1rem;
+    }
+
+    @media (max-width: 480px) {
+      .page-header h1 { font-size: 1.9rem; }
+      .card { padding: 1.4rem; }
+      .temp-f { font-size: 3.2rem; }
+      .details-grid { grid-template-columns: 1fr; }
+      .di.wide { grid-column: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="page-header">
+    <h1>✈️ METAR Reader</h1>
+    <p>Type an airport code — get a plain English weather report</p>
+  </header>
+
+  <div class="search-wrap">
+    <div class="search-box">
+      <input id="icao-input"
+             type="text"
+             placeholder="Airport code, e.g. KJFK"
+             maxlength="4"
+             autocomplete="off"
+             autocorrect="off"
+             autocapitalize="characters"
+             spellcheck="false">
+      <button id="search-btn" onclick="go()">Get Weather</button>
+    </div>
+
+    <div class="quick-picks">
+      <button class="qp" onclick="pick('KJFK')">🗽 New York (KJFK)</button>
+      <button class="qp" onclick="pick('EGLL')">🎡 London (EGLL)</button>
+      <button class="qp" onclick="pick('OMDB')">🏙️ Dubai (OMDB)</button>
+      <button class="qp" onclick="pick('YSSY')">🦘 Sydney (YSSY)</button>
+      <button class="qp" onclick="pick('RJTT')">🗼 Tokyo (RJTT)</button>
+    </div>
+  </div>
+
+  <div id="error-msg" role="alert"></div>
+
+  <div id="loading" aria-live="polite">
+    <div class="spinner"></div>
+    <p>Fetching latest METAR…</p>
+  </div>
+
+  <div id="result" aria-live="polite"></div>
+
+<script>
+  const $input  = document.getElementById('icao-input');
+  const $btn    = document.getElementById('search-btn');
+  const $error  = document.getElementById('error-msg');
+  const $load   = document.getElementById('loading');
+  const $result = document.getElementById('result');
+
+  $input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+
+  function pick(code) { $input.value = code; go(); }
+
+  function showErr(msg) {
+    $error.innerHTML = '⚠️ ' + esc(msg);
+    $error.style.display = 'block';
+  }
+
+  function clearErr() { $error.style.display = 'none'; }
+
+  async function go() {
+    const icao = $input.value.trim().toUpperCase();
+    if (!icao) { showErr('Please enter an airport ICAO code.'); return; }
+
+    clearErr();
+    $load.style.display = 'block';
+    $result.style.display = 'none';
+    $btn.disabled = true;
+
+    try {
+      const res  = await fetch('/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ icao }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        showErr(data.error || 'An unexpected error occurred.');
+        return;
+      }
+      render(data);
+    } catch {
+      showErr('Network error — check your connection and try again.');
+    } finally {
+      $load.style.display = 'none';
+      $btn.disabled = false;
+    }
+  }
+
+  function render(data) {
+    const d = data.decoded;
+    const summary = data.summary || [];
+
+    if (!d) {
+      $result.innerHTML = `
+        <div class="card">
+          <p style="color:#546e7a;margin-bottom:1rem">
+            Could not decode METAR — showing raw data.
+          </p>
+          <div class="raw-text">${esc(data.raw)}</div>
+          ${data.decode_error ? `<div class="decode-warn">Decoder: ${esc(data.decode_error)}</div>` : ''}
+        </div>`;
+      $result.style.display = 'block';
+      return;
+    }
+
+    // Temperature hero block
+    const tempHtml = d.temperature_f != null ? `
+      <div class="temp-block">
+        <div class="temp-f">${d.temperature_f}<span style="font-size:2.2rem;color:#a0b8c8">°F</span></div>
+        <div class="temp-c">${d.temperature_c}°C</div>
+      </div>` : '';
+
+    // Details grid
+    const gridHtml = summary.map(item => `
+      <div class="di${item.wide ? ' wide' : ''}">
+        <div class="di-icon">${item.icon}</div>
+        <div class="di-label">${esc(item.label)}</div>
+        <div class="di-value">${esc(item.value)}</div>
+      </div>`).join('');
+
+    const autoBadge = d.auto ? '<span class="auto-tag">AUTO STATION</span>' : '';
+
+    $result.innerHTML = `
+      <div class="card">
+        <div class="card-top">
+          <div>
+            <div class="station-id">${esc(d.station || '??')}</div>
+            <div class="station-meta">${esc(d.time_utc || '')}</div>
+            ${autoBadge}
+          </div>
+          <div class="cond-hero">
+            <span class="cond-emoji">${d.condition_icon}</span>
+            <div class="cond-name">${esc(d.condition)}</div>
+          </div>
+        </div>
+
+        ${tempHtml}
+
+        <div class="details-grid">${gridHtml}</div>
+
+        <div class="raw-section">
+          <button class="raw-toggle" onclick="toggleRaw(this)">
+            <span>▶</span> Show raw METAR
+          </button>
+          <div class="raw-body">
+            <div class="raw-text">${esc(data.raw)}</div>
+          </div>
+        </div>
+      </div>`;
+
+    $result.style.display = 'block';
+    $result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function toggleRaw(btn) {
+    const body = btn.nextElementSibling;
+    const open = body.classList.toggle('open');
+    btn.innerHTML = open
+      ? '<span>▼</span> Hide raw METAR'
+      : '<span>▶</span> Show raw METAR';
+  }
+
+  function esc(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>
